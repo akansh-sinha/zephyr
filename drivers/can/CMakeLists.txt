@@ -4,6 +4,12 @@ zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/can.h)
 
 zephyr_library()
 
+# CAN subsystem include paths for out-of-tree drivers
+# zephyr-keep-sorted-start
+zephyr_library_include_directories_ifdef(CONFIG_CAN_MCAN .)
+zephyr_library_include_directories_ifdef(CONFIG_CAN_SJA1000 .)
+# zephyr-keep-sorted-stop
+
 # CAN subsystem common files
 # zephyr-keep-sorted-start
 zephyr_library_sources_ifdef(CONFIG_CAN can_common.c)
@@ -23,6 +29,7 @@ zephyr_library_sources_ifdef(CONFIG_CAN_MCAN can_mcan.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_MCP2515 can_mcp2515.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_MCP251XFD can_mcp251xfd.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_MCUX_FLEXCAN can_mcux_flexcan.c)
+zephyr_library_sources_ifdef(CONFIG_CAN_MSPM0_CANFD can_mspm0_canfd.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_NRF can_nrf.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_NUMAKER can_numaker.c)
 zephyr_library_sources_ifdef(CONFIG_CAN_NXP_LPC_MCAN can_nxp_lpc_mcan.c)

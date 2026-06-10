@@ -213,7 +213,7 @@ static uint8_t internal_read_volume_offset_state_cb(struct bt_conn *conn, uint8_
 		return BT_GATT_ITER_STOP;
 	}
 
-	if (err) {
+	if (err != 0) {
 		LOG_WRN("Volume offset state read failed: %d", err);
 		cb_err = BT_ATT_ERR_UNLIKELY;
 	} else if (data) {
@@ -710,12 +710,7 @@ static void vocs_client_reset(struct bt_vocs_client *inst)
 	inst->control_handle = 0;
 	inst->desc_handle = 0;
 
-	if (inst->conn != NULL) {
-		struct bt_conn *conn = inst->conn;
-
-		bt_conn_unref(conn);
-		inst->conn = NULL;
-	}
+	bt_conn_drop(&inst->conn);
 }
 
 int bt_vocs_discover(struct bt_conn *conn, struct bt_vocs *vocs,

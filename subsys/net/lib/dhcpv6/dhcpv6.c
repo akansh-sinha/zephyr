@@ -69,7 +69,7 @@ const char *net_dhcpv6_state_name(enum net_dhcpv6_state state)
 		"bound",
 	};
 
-	__ASSERT_NO_MSG(state >= 0 && state < sizeof(name));
+	__ASSERT_NO_MSG(state >= 0 && state < ARRAY_SIZE(name));
 	return name[state];
 }
 
@@ -1225,8 +1225,8 @@ static int dhcpv6_parse_option_dns_servers(struct net_pkt *pkt, uint16_t length,
 
 	*server_count = addr_count;
 
-	if (length > 0) {
-		net_pkt_skip(pkt, length);
+	if (net_pkt_skip(pkt, length) < 0) {
+		return -ENOBUFS;
 	}
 
 	return 0;
@@ -1834,6 +1834,9 @@ static int dhcpv6_handle_reply(struct net_if *iface, struct net_pkt *pkt,
 			net_dhcpv6_stop(iface);
 			return -EFAULT;
 		}
+
+		NET_INFO("Received: %s",
+			net_sprint_ipv6_addr(&ia_na.iaaddr.addr));
 	}
 
 prefix:

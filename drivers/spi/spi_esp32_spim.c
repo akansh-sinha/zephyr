@@ -11,9 +11,7 @@
 #include <hal/spi_ll.h>
 #include <esp_attr.h>
 #include <esp_clk_tree.h>
-#if defined(CONFIG_SOC_SERIES_ESP32S3) || defined(CONFIG_SOC_SERIES_ESP32S2)
-#include <esp_cache.h>
-#endif
+#include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(esp32_spi, CONFIG_SPI_LOG_LEVEL);
@@ -21,15 +19,27 @@ LOG_MODULE_REGISTER(esp32_spi, CONFIG_SPI_LOG_LEVEL);
 #include <soc.h>
 #include <esp_memory_utils.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
 #ifdef SOC_GDMA_SUPPORTED
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_esp32.h>
 #endif
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/pm/policy.h>
 #include "spi_context.h"
 #include "spi_esp32_spim.h"
+
+#if CONFIG_ESP32_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_SPI_SUPPORT_SLEEP_RETENTION
+#define SPI_SLEEP_RETENTION_ENABLED 1
+#else
+#define SPI_SLEEP_RETENTION_ENABLED 0
+#endif
+
+#if SPI_SLEEP_RETENTION_ENABLED
+#include <soc/spi_periph.h>
+#include <esp_private/sleep_retention.h>
+#endif
 
 #if defined(CONFIG_SOC_SERIES_ESP32S2) && defined(CONFIG_ADC_ESP32_DMA) &&                         \
 	DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(spi3)) && DT_PROP(DT_NODELABEL(spi3), dma_enabled)
@@ -40,6 +50,33 @@ LOG_MODULE_REGISTER(esp32_spi, CONFIG_SPI_LOG_LEVEL);
 
 #define SPI_DMA_RX 0
 #define SPI_DMA_TX 1
+
+#if CONFIG_PM
+static void spi_esp32_pm_policy_state_lock_get(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	unsigned int key = irq_lock();
+
+	if (!data->pm_policy_state_on) {
+		data->pm_policy_state_on = true;
+		pm_policy_state_all_lock_get();
+	}
+
+	irq_unlock(key);
+}
+
+static void spi_esp32_pm_policy_state_lock_put(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	unsigned int key = irq_lock();
+
+	if (data->pm_policy_state_on) {
+		data->pm_policy_state_on = false;
+		pm_policy_state_all_lock_put();
+	}
+	irq_unlock(key);
+}
+#endif
 
 static bool spi_esp32_transfer_ongoing(struct spi_esp32_data *data)
 {
@@ -95,7 +132,11 @@ static int spi_esp32_gdma_config(const struct device *dev, uint8_t dir, uint8_t 
 		dma_cfg.channel_direction = MEMORY_TO_PERIPHERAL;
 		dma_blk.source_address = (uint32_t)buf;
 	}
+#if SOC_AXI_GDMA_SUPPORTED
+	dma_cfg.dma_slot = SOC_GDMA_TRIG_PERIPH_SPI2 + cfg->dma_host;
+#else
 	dma_cfg.dma_slot = cfg->dma_host;
+#endif
 	dma_cfg.block_count = 1;
 	dma_cfg.head_block = &dma_blk;
 	dma_blk.block_size = len;
@@ -222,7 +263,7 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 	/* clean up and prepare SPI hal */
 	for (size_t i = 0; i < ARRAY_SIZE(hal->hw->data_buf); ++i) {
 #if defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C6) ||                    \
-	defined(CONFIG_SOC_SERIES_ESP32H2)
+	defined(CONFIG_SOC_SERIES_ESP32H2) || defined(CONFIG_SOC_SERIES_ESP32P4)
 		hal->hw->data_buf[i].val = 0;
 #else
 		hal->hw->data_buf[i] = 0;
@@ -245,7 +286,7 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 
 #if defined(SOC_GDMA_SUPPORTED)
 	if (cfg->dma_enabled && hal_trans->rcv_buffer) {
-		/* setup DMA channels via DMA driver */
+		sys_cache_data_flush_and_invd_range(hal_trans->rcv_buffer, transfer_len_bytes);
 		err = spi_esp32_gdma_config(dev, SPI_DMA_RX, hal_trans->rcv_buffer,
 					    transfer_len_bytes);
 		if (err) {
@@ -254,6 +295,7 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 	}
 
 	if (cfg->dma_enabled && hal_trans->send_buffer) {
+		sys_cache_data_flush_range(hal_trans->send_buffer, transfer_len_bytes);
 		err = spi_esp32_gdma_config(dev, SPI_DMA_TX, hal_trans->send_buffer,
 					    transfer_len_bytes);
 		if (err) {
@@ -343,13 +385,11 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 	if (cfg->dma_enabled) {
 		if (hal_trans->rcv_buffer) {
 			dma_stop(cfg->dma_dev, cfg->dma_rx_ch);
-#if defined(CONFIG_SOC_SERIES_ESP32S3) || defined(CONFIG_SOC_SERIES_ESP32S2)
-			/* Invalidate cache for RX buffer - S3/S2 have data cache that
-			 * needs to be invalidated after DMA writes to memory
+			/* Invalidate cache for the RX buffer so the CPU reads fresh
+			 * data the DMA just wrote to memory. No-op when CACHE_MANAGEMENT
+			 * is disabled.
 			 */
-			esp_cache_msync(hal_trans->rcv_buffer, transfer_len_bytes,
-					ESP_CACHE_MSYNC_FLAG_DIR_M2C);
-#endif
+			sys_cache_data_invd_range(hal_trans->rcv_buffer, transfer_len_bytes);
 		}
 		if (hal_trans->send_buffer) {
 			dma_stop(cfg->dma_dev, cfg->dma_tx_ch);
@@ -387,6 +427,10 @@ static void IRAM_ATTR spi_esp32_isr(void *arg)
 	} while (spi_esp32_transfer_ongoing(data));
 
 	spi_esp32_complete(dev, data, cfg->spi, 0);
+
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_put(dev);
+#endif
 }
 #endif
 
@@ -420,6 +464,40 @@ static int spi_esp32_init_dma(const struct device *dev)
 
 	return 0;
 }
+
+#if SPI_SLEEP_RETENTION_ENABLED
+static esp_err_t spi_esp32_create_sleep_retention_cb(void *arg)
+{
+	const struct device *dev = arg;
+	const struct spi_esp32_config *cfg = dev->config;
+	unsigned int idx = cfg->dma_host;
+
+	return sleep_retention_entries_create(
+		spi_reg_retention_info[idx].entry_array, spi_reg_retention_info[idx].array_size,
+		REGDMA_LINK_PRI_GPSPI, spi_reg_retention_info[idx].module_id);
+}
+
+static void spi_esp32_sleep_retention_init(const struct device *dev)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	unsigned int idx = cfg->dma_host;
+
+	sleep_retention_module_init_param_t init_param = {
+		.cbs = {.create = {.handle = spi_esp32_create_sleep_retention_cb,
+				   .arg = (void *)dev}},
+		.depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)};
+
+	esp_err_t err =
+		sleep_retention_module_init(spi_reg_retention_info[idx].module_id, &init_param);
+
+	if (err == ESP_OK) {
+		err = sleep_retention_module_allocate(spi_reg_retention_info[idx].module_id);
+	}
+	if (err != ESP_OK) {
+		LOG_WRN("SPI sleep retention init failed (%d)", err);
+	}
+}
+#endif /* SPI_SLEEP_RETENTION_ENABLED */
 
 static int spi_esp32_init(const struct device *dev)
 {
@@ -493,6 +571,10 @@ static int spi_esp32_init(const struct device *dev)
 	}
 
 	spi_context_unlock_unconditionally(&data->ctx);
+
+#if SPI_SLEEP_RETENTION_ENABLED
+	spi_esp32_sleep_retention_init(dev);
+#endif
 
 	return 0;
 }
@@ -670,6 +752,10 @@ static int transceive(const struct device *dev,
 		goto done;
 	}
 
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_get(dev);
+#endif
+
 	ret = spi_esp32_configure(dev, spi_cfg);
 	if (ret) {
 		goto done;
@@ -680,6 +766,8 @@ static int transceive(const struct device *dev,
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
 	spi_ll_enable_int(cfg->spi);
 	spi_ll_set_int_stat(cfg->spi);
+	spi_context_release(&data->ctx, ret);
+	return ret;
 #else
 
 	do {
@@ -691,6 +779,10 @@ static int transceive(const struct device *dev,
 #endif  /* CONFIG_SPI_ESP32_INTERRUPT */
 
 done:
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_put(dev);
+#endif
+
 	spi_context_release(&data->ctx, ret);
 
 	return ret;

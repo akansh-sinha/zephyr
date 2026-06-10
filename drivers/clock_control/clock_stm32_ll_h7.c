@@ -874,7 +874,8 @@ static void stm32_clock_switch_to_hsi(void)
 __unused
 static int set_up_plls(void)
 {
-#if defined(STM32_PLL_ENABLED) || defined(STM32_PLL2_ENABLED) || defined(STM32_PLL3_ENABLED)
+#if !defined(CONFIG_CPU_CORTEX_M4) &&                                                              \
+	(defined(STM32_PLL_ENABLED) || defined(STM32_PLL2_ENABLED) || defined(STM32_PLL3_ENABLED))
 	int r;
 	uint32_t vco_input_range;
 	uint32_t vco_output_range;
@@ -1099,7 +1100,8 @@ static int set_up_plls(void)
 	/* Init PLL source to None */
 	LL_RCC_PLL_SetSource(LL_RCC_PLLSOURCE_NONE);
 
-#endif /* STM32_PLL_ENABLED || STM32_PLL2_ENABLED || STM32_PLL3_ENABLED */
+#endif /* !CONFIG_CPU_CORTEX_M4 && (STM32_PLL_ENABLED || STM32_PLL2_ENABLED || STM32_PLL3_ENABLED)
+	*/
 
 	return 0;
 }
@@ -1118,7 +1120,7 @@ int stm32_clock_control_init(const struct device *dev)
 	defined(CONFIG_SOC_STM32H7B3XX) || defined(CONFIG_SOC_STM32H7B3XXQ)
 	LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_HSEM);
 #elif !defined(CONFIG_SOC_SERIES_STM32H7RSX)
-	/* The stm32h7RS serie has no HSEM peripheral */
+	/* The stm32h7RS series has no HSEM peripheral */
 	LL_AHB4_GRP1_EnableClock(LL_AHB4_GRP1_PERIPH_HSEM);
 #endif
 	z_stm32_hsem_lock(CFG_HW_RCC_SEMID, HSEM_LOCK_DEFAULT_RETRY);

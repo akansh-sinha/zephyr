@@ -27,8 +27,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(uhc_mcux);
 
-K_MEM_SLAB_DEFINE_STATIC(mcux_uhc_transfer_pool, sizeof(usb_host_transfer_t),
-			 USB_HOST_CONFIG_MAX_TRANSFERS, sizeof(void *));
+K_MEM_SLAB_DEFINE_STATIC_TYPE(mcux_uhc_transfer_pool, usb_host_transfer_t,
+			      USB_HOST_CONFIG_MAX_TRANSFERS);
 
 #if defined(CONFIG_NOCACHE_MEMORY)
 K_HEAP_DEFINE_NOCACHE(mcux_transfer_alloc_pool,
@@ -79,7 +79,7 @@ static void uhc_mcux_isr(const struct device *dev)
 	USB_HostEhciIsrFunction((void *)(&priv->mcux_host));
 }
 
-/* MCUX controller dirver uses this callback to notify upper layer suspend related event */
+/* MCUX controller driver uses this callback to notify upper layer suspend related event */
 static usb_status_t mcux_host_callback(usb_device_handle deviceHandle,
 				       usb_host_configuration_handle configurationHandle,
 				       uint32_t eventCode)

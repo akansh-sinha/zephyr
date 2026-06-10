@@ -467,6 +467,18 @@ DMA_STM32_EXPORT_API int dma_stm32_configure(const struct device *dev,
 	stream->source_periph = (stream->direction == PERIPHERAL_TO_MEMORY);
 
 #if defined(CONFIG_DMA_STM32_V1)
+	if ((config->source_burst_length % config->source_data_size) != 0) {
+		LOG_ERR("Source burst length %d is not aligned to source data size %d",
+			config->source_burst_length, config->source_data_size);
+		return -EINVAL;
+	}
+
+	if ((config->dest_burst_length % config->dest_data_size) != 0) {
+		LOG_ERR("Destination burst length %d is not aligned to destination data size %d",
+			config->dest_burst_length, config->dest_data_size);
+		return -EINVAL;
+	}
+
 	DMA_InitStruct.MemBurst = stm32_dma_get_mburst(config,
 						       stream->source_periph);
 	DMA_InitStruct.PeriphBurst = stm32_dma_get_pburst(config,
@@ -510,6 +522,9 @@ DMA_STM32_EXPORT_API int dma_stm32_configure(const struct device *dev,
 	DMA_InitStruct.PeriphRequest = config->dma_slot;
 #endif
 	LL_DMA_Init(dma, dma_stm32_id_to_stream(id), &DMA_InitStruct);
+
+	/* Always enable the transfer error interrupt */
+	LL_DMA_EnableIT_TE(dma, dma_stm32_id_to_stream(id));
 
 	/* Enable transfer complete ISR if in non-cyclic mode or a callback is requested */
 	if (!stream->cyclic || stream->dma_callback != NULL) {

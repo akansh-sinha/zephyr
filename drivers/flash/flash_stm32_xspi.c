@@ -6,7 +6,7 @@
 
 /*
  * **************************************************************************
- * xSPI flash controller driver for stm32 serie with xSPI periherals
+ * xSPI flash controller driver for stm32 series with xSPI periherals
  * This driver is based on the stm32Cube HAL XSPI driver
  * with one xspi DTS NODE
  * **************************************************************************
@@ -795,7 +795,7 @@ static int stm32_xspi_mem_reset(const struct device *dev)
 	gpio_pin_set_dt(&dev_cfg->reset, 0);
 #else
 
-	/* Reset command sent sucessively for each mode SPI/OPS & STR/DTR */
+	/* Reset command sent successively for each mode SPI/OPS & STR/DTR */
 	XSPI_RegularCmdTypeDef s_command = {
 		.OperationType = HAL_XSPI_OPTYPE_COMMON_CFG,
 		.AddressMode = HAL_XSPI_ADDRESS_NONE,
@@ -2106,6 +2106,13 @@ static int flash_stm32_xspi_init(const struct device *dev)
 				     == CLOCK_CONTROL_STATUS_ON) {
 		if (stm32_xspi_is_memorymap(dev)) {
 			LOG_DBG("NOR init'd in MemMapped mode");
+#if defined(CONFIG_FLASH_PAGE_LAYOUT)
+			ret = setup_pages_layout(dev);
+			if (ret != 0) {
+				LOG_ERR("layout setup failed: %d", ret);
+				return -ENODEV;
+			}
+#endif
 			/* Force HAL instance in correct state */
 			dev_data->hxspi.State = HAL_XSPI_STATE_BUSY_MEM_MAPPED;
 			return 0;

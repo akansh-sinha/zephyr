@@ -125,6 +125,12 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
+		wicr: wicr@3fd000 {
+			compatible = "nordic,nrf-wicr";
+			reg = <0x3fd000 0x1000>;
+			status = "disabled";
+		};
+
 		ficr: ficr@ffc000 {
 			compatible = "nordic,nrf-ficr";
 			reg = <0xffc000 0x1000>;
@@ -135,7 +141,7 @@
 		/* Intentionally empty because uicr is hardware fixed to Secure */
 #else
 		uicr: uicr@ffd000 {
-			compatible = "nordic,nrf-uicr";
+			compatible = "nordic,nrf71-uicr";
 			reg = <0xffd000 0x1000>;
 			ranges = <0x0 0xffd000 0x1000>;
 			#address-cells = <1>;
@@ -175,6 +181,15 @@
 			ranges = <0x0 0x200e0000 0x1e000>;
 		};
 
+		/* Wi-Fi ROM regions */
+		wifi_lmac_rom: memory@28080000 {
+			reg = <0x28080000 DT_SIZE_K(320)>;
+		};
+
+		wifi_umac_rom: memory@28180000 {
+			reg = <0x28180000 DT_SIZE_K(512)>;
+		};
+
 #ifdef USE_NON_SECURE_ADDRESS_MAP
 		global_peripherals: peripheral@40000000 {
 			reg = <0x40000000 0x10000000>;
@@ -187,7 +202,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			ranges = <0x0 0x50000000 0x10000000>;
-			#include "nrf7120_enga_secure_peripherals.dtsi"
+#include "nrf7120_enga_secure_peripherals.dtsi"
 #endif
 
 			dppic00: dppic@42000 {
@@ -305,8 +320,8 @@
 				status = "disabled";
 			};
 
-			qspi00: qspi@5b000 {
-				compatible = "nordic,nrf-qspi-v2", "snps,designware-ssi";
+			mspi00: mspi@5b000 {
+				compatible = "nordic,nrf-mspi", "snps,designware-ssi";
 				interrupts = <91 NRF_DEFAULT_IRQ_PRIORITY>;
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -317,11 +332,12 @@
 				packet-data-limit = <65536>;
 				dma-transmit-data-level = <8>;
 				dma-receive-data-level = <8>;
+				concurrent-memmap-support;
 				status = "disabled";
 			};
 
-			qspi01: qspi@5c000 {
-				compatible = "nordic,nrf-qspi-v2", "snps,designware-ssi";
+			mspi01: mspi@5c000 {
+				compatible = "nordic,nrf-mspi", "snps,designware-ssi";
 				interrupts = <92 NRF_DEFAULT_IRQ_PRIORITY>;
 				#address-cells = <1>;
 				#size-cells = <0>;
@@ -656,7 +672,7 @@
 			};
 
 			nfct: nfct@d6000 {
-				compatible = "nordic,nrf-nfct";
+				compatible = "nordic,nrf-nfct-v2";
 				reg = <0xd6000 0x1000>;
 				interrupts = <214 NRF_DEFAULT_IRQ_PRIORITY>;
 				status = "disabled";

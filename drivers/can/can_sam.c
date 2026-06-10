@@ -6,7 +6,7 @@
  */
 
 #include <zephyr/drivers/can.h>
-#include <zephyr/drivers/can/can_mcan.h>
+#include "can_mcan.h"
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <soc.h>
@@ -213,7 +213,7 @@ static void config_can_##inst##_irq(void)                                       
 		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
 			   (.mram = (mem_addr_t)POINTER_TO_UINT(&can_sam_mram_##inst),))	\
 		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, message_ram),				\
-			   (.mram = (mm_reg_t)DT_INST_REG_ADDR_BY_NAME(inst, message_ram),))	\
+			   (.mram = (mm_reg_t)CAN_MCAN_DT_INST_MRAM_ADDR(inst),))		\
 												\
 		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
 			   (.mem_addr_cfg = CAN_MEM_ADDR_CFG_MSB16_HIGH,))			\
